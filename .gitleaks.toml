@@ -1,0 +1,13 @@
+title = "unicom360-java"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Throwaway webhook secrets in the conformance vectors and the tests that reuse them, and their copies in build output; not credentials"
+paths = [
+  '''(^|/)src/test/resources/conformance/''',
+  '''(^|/)src/test/java/com/unicom360/WebhooksExtraTest\.java$''',
+  '''(^|/)src/test/java/com/unicom360/LoggingTest\.java$''',
+  '''(^|/)target/''',
+]

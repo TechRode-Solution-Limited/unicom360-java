@@ -1,0 +1,118 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Check the tag and the CHANGELOG
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: The tag matches the POM
+        id: version
+        run: |
+          version=$(./mvnw -q -B -ntp help:evaluate -Dexpression=project.version -DforceStdout)
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match the POM version $version" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: The CHANGELOG has a dated section for it
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if ! grep -Eq "^## \[${VERSION//./\\.}\] - [0-9]{4}-[0-9]{2}-[0-9]{2}$" CHANGELOG.md; then
+            echo "CHANGELOG.md needs a '## [$VERSION] - YYYY-MM-DD' section" >&2
+            exit 1
+          fi
+
+  test:
+    name: Tests and javadoc (Temurin ${{ matrix.java }})
+    needs: check
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        java: ["17", "21", "25"]
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+          cache: maven
+
+      - name: Enforcer, compile, every test, javadoc (doclint), jars
+        run: ./mvnw -B -ntp verify
+
+  publish:
+    name: Upload to the Central Portal
+    needs: [check, test]
+    runs-on: ubuntu-latest
+    environment:
+      name: maven-central
+      url: https://central.sonatype.com/artifact/com.unicom360/unicom360-java/${{ needs.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+
+      # setup-java writes the "central" server into settings.xml, reading these environment
+      # variables at build time, and imports the signing key.
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+          server-id: central
+          server-username: CENTRAL_TOKEN_USERNAME
+          server-password: CENTRAL_TOKEN_PASSWORD
+          gpg-private-key: ${{ secrets.MAVEN_GPG_PRIVATE_KEY }}
+          gpg-passphrase: MAVEN_GPG_PASSPHRASE
+
+      - name: Sign and upload (autoPublish=false, waitUntil=validated)
+        env:
+          CENTRAL_TOKEN_USERNAME: ${{ secrets.CENTRAL_TOKEN_USERNAME }}
+          CENTRAL_TOKEN_PASSWORD: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
+        run: ./mvnw -B -ntp -P release deploy
+
+  github-release:
+    name: GitHub Release
+    needs: [check, publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Release notes from the CHANGELOG section
+        env:
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          awk -v version="$VERSION" '
+            index($0, "## [" version "]") == 1 { found = 1; next }
+            found && /^## \[/ { exit }
+            found && /^\[[^]]+\]: / { next }
+            found { print }
+          ' CHANGELOG.md > notes.md
+          test -s notes.md
+          cat notes.md
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file notes.md

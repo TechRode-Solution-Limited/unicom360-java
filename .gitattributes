@@ -1,0 +1,7 @@
+* text=auto eol=lf
+
+mvnw.cmd text eol=crlf
+
+# Vendored conformance fixtures: stored and checked out byte for byte, so the sha256 in
+# src/test/resources/conformance/VERSION keeps matching.
+src/test/resources/conformance/** -text

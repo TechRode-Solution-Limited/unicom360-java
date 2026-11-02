@@ -1,0 +1,152 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Format and em dash check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # google-java-format needs JDK 21 or later.
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Spotless (google-java-format)
+        run: ./mvnw -B -ntp spotless:check
+
+      - name: No em dash characters
+        run: |
+          if grep -rn --exclude-dir=.git --exclude-dir=target $'\xe2\x80\x94' . ; then
+            echo "Em dash characters found above: rewrite those sentences." >&2
+            exit 1
+          fi
+
+  test:
+    name: Tests and javadoc (Temurin ${{ matrix.java }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        java: ["17", "21", "25"]
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+          cache: maven
+
+      - name: Enforcer, compile, every test, javadoc (doclint), jars
+        run: ./mvnw -B -ntp verify
+
+      - name: Fixtures and tests stay out of the jars
+        run: |
+          listing=$(jar tf "target/unicom360-java-$(./mvnw -q -B -ntp help:evaluate -Dexpression=project.version -DforceStdout).jar")
+          echo "$listing"
+          if echo "$listing" | grep -E 'conformance|\.json|Test\.class|unicom360-build'; then
+            echo "The jar must not ship these files." >&2
+            exit 1
+          fi
+
+      - name: Gson is the only runtime dependency
+        run: |
+          ./mvnw -B -ntp dependency:tree -Dscope=runtime -DoutputFile=tree.txt
+          cat tree.txt
+          test "$(grep -cE '^(\+-|\\-|\|)' tree.txt)" = 1
+          grep -q 'com.google.code.gson:gson' tree.txt
+
+  examples:
+    name: Examples compile against the installed SDK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+
+      - name: Install the SDK
+        run: ./mvnw -B -ntp install -DskipTests
+
+      - name: Compile the examples
+        run: ./mvnw -B -ntp -f examples/pom.xml verify
+
+  release-profile:
+    name: The release profile builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Package without signing
+        run: ./mvnw -B -ntp -P release -Dgpg.skip -DskipTests package
+
+  contract:
+    name: Contract (Prism mock of openapi.yaml)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Read the contract tag the fixtures were vendored from
+        id: contract
+        run: echo "tag=$(sed -n 's/^tag=//p' src/test/resources/conformance/VERSION)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v5
+        with:
+          repository: TechRode-Solution-Limited/unicom360-openapi
+          ref: ${{ steps.contract.outputs.tag }}
+          path: .openapi
+
+      - name: Start Prism
+        run: |
+          docker run -d --name prism -p 4015:4010 -v "$PWD/.openapi:/spec:ro" \
+            stoplight/prism:5 mock --multiprocess=false --errors -h 0.0.0.0 /spec/openapi.yaml
+          for _ in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:4015/health > /dev/null; then exit 0; fi
+            sleep 1
+          done
+          docker logs prism
+          exit 1
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Every operation against Prism
+        env:
+          UNICOM360_CONTRACT_BASE_URL: http://127.0.0.1:4015
+        run: ./mvnw -B -ntp test -Dgroups=contract
+
+  actionlint:
+    name: actionlint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Lint the workflows
+        run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.7 -color

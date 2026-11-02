@@ -1,0 +1,14 @@
+# Build output
+target/
+
+# Maven wrapper: the script downloads Maven itself, no jar is kept
+.mvn/wrapper/maven-wrapper.jar
+
+# Editors and systems
+.idea/
+*.iml
+.vscode/
+.classpath
+.project
+.settings/
+.DS_Store
