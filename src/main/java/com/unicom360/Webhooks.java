@@ -40,6 +40,10 @@ import javax.crypto.spec.SecretKeySpec;
  * }
  * }</pre>
  *
+ * <p>A null, empty or whitespace-only secret throws {@link ConfigurationException} before any other
+ * check, because anyone can forge a signature with an empty key. That is a fault in your
+ * configuration, not a failed verification.
+ *
  * <p>Deliveries are retried on any non-2xx (after 30 s, 2 min, 10 min, 30 min, 1 h, 3 h, 6 h and 12
  * h): answer 2xx quickly and drop repeats by {@link WebhookEvent#deliveryId()}.
  *
@@ -83,7 +87,7 @@ public final class Webhooks {
    *     names are matched without regard to case
    * @param secret your webhook secret, used as it is
    * @throws SignatureVerificationException when a check fails; {@code reason()} says which
-   * @throws ConfigurationException when the secret is empty
+   * @throws ConfigurationException when the secret is null, empty or only whitespace
    */
   public static void verify(byte[] rawBody, Map<String, ?> headers, String secret) {
     verify(rawBody, lookup(headers), secret);
@@ -97,7 +101,7 @@ public final class Webhooks {
    * @param secret your webhook secret, used as it is
    * @param tolerance how far the timestamp may be from your clock, in either direction (inclusive)
    * @throws SignatureVerificationException when a check fails
-   * @throws ConfigurationException when the secret is empty
+   * @throws ConfigurationException when the secret is null, empty or only whitespace
    */
   public static void verify(
       byte[] rawBody, Map<String, ?> headers, String secret, Duration tolerance) {
@@ -113,7 +117,7 @@ public final class Webhooks {
    * @param tolerance how far the timestamp may be from {@code now}, in either direction (inclusive)
    * @param now the time to verify at
    * @throws SignatureVerificationException when a check fails
-   * @throws ConfigurationException when the secret is empty
+   * @throws ConfigurationException when the secret is null, empty or only whitespace
    */
   public static void verify(
       byte[] rawBody, Map<String, ?> headers, String secret, Duration tolerance, Instant now) {
@@ -127,7 +131,7 @@ public final class Webhooks {
    * @param headers looks up the request's headers, for example {@code request::getHeader}
    * @param secret your webhook secret, used as it is
    * @throws SignatureVerificationException when a check fails
-   * @throws ConfigurationException when the secret is empty
+   * @throws ConfigurationException when the secret is null, empty or only whitespace
    */
   public static void verify(byte[] rawBody, HeaderLookup headers, String secret) {
     verify(rawBody, headers, secret, DEFAULT_TOLERANCE);
@@ -141,7 +145,7 @@ public final class Webhooks {
    * @param secret your webhook secret, used as it is
    * @param tolerance how far the timestamp may be from your clock, in either direction (inclusive)
    * @throws SignatureVerificationException when a check fails
-   * @throws ConfigurationException when the secret is empty
+   * @throws ConfigurationException when the secret is null, empty or only whitespace
    */
   public static void verify(
       byte[] rawBody, HeaderLookup headers, String secret, Duration tolerance) {
@@ -159,17 +163,17 @@ public final class Webhooks {
    * @param tolerance how far the timestamp may be from {@code now}, in either direction (inclusive)
    * @param now the time to verify at
    * @throws SignatureVerificationException when a check fails
-   * @throws ConfigurationException when the secret is empty
+   * @throws ConfigurationException when the secret is null, empty or only whitespace
    */
   public static void verify(
       byte[] rawBody, HeaderLookup headers, String secret, Duration tolerance, Instant now) {
     Objects.requireNonNull(rawBody, "rawBody");
     Objects.requireNonNull(headers, "headers");
-    Objects.requireNonNull(secret, "secret");
     Objects.requireNonNull(tolerance, "tolerance");
     Objects.requireNonNull(now, "now");
-    if (secret.isEmpty()) {
-      throw new ConfigurationException("The webhook secret is empty.");
+    if (secret == null || secret.isBlank()) {
+      throw new ConfigurationException(
+          "The webhook secret is empty or only whitespace: set it to the secret from the portal.");
     }
 
     String signature = headers.get(SIGNATURE_HEADER);
@@ -204,6 +208,7 @@ public final class Webhooks {
    * @param secret your webhook secret, used as it is
    * @return the event: {@code MessageStatusEvent}, {@code MessageReceivedEvent}, {@code TestEvent}
    *     or {@code UnknownEvent}
+   * @throws ConfigurationException when the secret is null, empty or only whitespace
    * @throws SignatureVerificationException when a check fails
    * @throws Unicom360Exception when the body is not a JSON object with a string {@code event}
    */
@@ -219,6 +224,7 @@ public final class Webhooks {
    * @param secret your webhook secret, used as it is
    * @param tolerance how far the timestamp may be from your clock, in either direction (inclusive)
    * @return the event
+   * @throws ConfigurationException when the secret is null, empty or only whitespace
    * @throws SignatureVerificationException when a check fails
    * @throws Unicom360Exception when the body is not a JSON object with a string {@code event}
    */
@@ -236,6 +242,7 @@ public final class Webhooks {
    * @param tolerance how far the timestamp may be from {@code now}, in either direction (inclusive)
    * @param now the time to verify at
    * @return the event
+   * @throws ConfigurationException when the secret is null, empty or only whitespace
    * @throws SignatureVerificationException when a check fails
    * @throws Unicom360Exception when the body is not a JSON object with a string {@code event}
    */
@@ -251,6 +258,7 @@ public final class Webhooks {
    * @param headers looks up the request's headers, for example {@code request::getHeader}
    * @param secret your webhook secret, used as it is
    * @return the event
+   * @throws ConfigurationException when the secret is null, empty or only whitespace
    * @throws SignatureVerificationException when a check fails
    * @throws Unicom360Exception when the body is not a JSON object with a string {@code event}
    */
@@ -266,6 +274,7 @@ public final class Webhooks {
    * @param secret your webhook secret, used as it is
    * @param tolerance how far the timestamp may be from your clock, in either direction (inclusive)
    * @return the event
+   * @throws ConfigurationException when the secret is null, empty or only whitespace
    * @throws SignatureVerificationException when a check fails
    * @throws Unicom360Exception when the body is not a JSON object with a string {@code event}
    */
@@ -285,6 +294,7 @@ public final class Webhooks {
    * @param tolerance how far the timestamp may be from {@code now}, in either direction (inclusive)
    * @param now the time to verify at
    * @return the event
+   * @throws ConfigurationException when the secret is null, empty or only whitespace
    * @throws SignatureVerificationException when a check fails
    * @throws Unicom360Exception when the body is not a JSON object with a string {@code event}
    */

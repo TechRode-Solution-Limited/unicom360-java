@@ -1,6 +1,6 @@
 package com.unicom360.errors;
 
-/** The client cannot be built or used as configured: no API key, an unusable option. */
+/** The SDK cannot be used as configured: no API key, an unusable option, a blank webhook secret. */
 public final class ConfigurationException extends Unicom360Exception {
   private static final long serialVersionUID = 1L;
 

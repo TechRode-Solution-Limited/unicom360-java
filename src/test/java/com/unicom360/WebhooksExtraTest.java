@@ -156,6 +156,72 @@ class WebhooksExtraTest {
         () -> Webhooks.verify(bytes("{}"), Map.of(), "", Webhooks.DEFAULT_TOLERANCE, NOW));
   }
 
+  private static final List<String> BLANK_SECRETS =
+      List.of("", " ", "   ", "\t", "\r\n", " \t\r\n ");
+
+  /**
+   * The signature of {@code {}} at {@link #TIMESTAMP} under the empty key, which {@code
+   * SecretKeySpec} will not take: {@code printf '1792829762.{}' | openssl dgst -sha256 -hmac ''}.
+   */
+  private static final String EMPTY_KEY_SIGNATURE =
+      "sha256=8a6fe206ee11571e4a054be02ac4011eb0a25d370e01944f0d3b2fd1d4369314";
+
+  /** Must never verify: anyone can compute the signature. */
+  @Test
+  void aBlankSecretRefusesARequestSignedWithThatKey() throws GeneralSecurityException {
+    byte[] body = bytes("{}");
+    for (String blank : BLANK_SECRETS) {
+      String signature = blank.isEmpty() ? EMPTY_KEY_SIGNATURE : sign(TIMESTAMP, body, blank);
+      Map<String, String> forged =
+          Map.of("X-Unicom360-Timestamp", TIMESTAMP, "X-Unicom360-Signature", signature);
+      assertThrows(
+          ConfigurationException.class,
+          () -> Webhooks.verify(body, forged, blank, Webhooks.DEFAULT_TOLERANCE, NOW));
+      assertThrows(
+          ConfigurationException.class,
+          () -> Webhooks.constructEvent(body, forged, blank, Webhooks.DEFAULT_TOLERANCE, NOW));
+    }
+  }
+
+  @Test
+  void anUnsetSecretIsAConfigurationProblem() {
+    String unset = null; // System.getenv("UNICOM360_WEBHOOK_SECRET")
+    assertThrows(ConfigurationException.class, () -> Webhooks.verify(bytes("{}"), Map.of(), unset));
+    assertThrows(
+        ConfigurationException.class, () -> Webhooks.constructEvent(bytes("{}"), Map.of(), unset));
+  }
+
+  @Test
+  void aBlankSecretIsRefusedBeforeAnyHeaderCheck() {
+    for (String blank : BLANK_SECRETS) {
+      assertThrows(
+          ConfigurationException.class, () -> Webhooks.verify(bytes("{}"), Map.of(), blank));
+      assertThrows(
+          ConfigurationException.class,
+          () -> Webhooks.constructEvent(bytes("{}"), Map.of(), blank));
+    }
+  }
+
+  @Test
+  void theSecretIsUsedExactlyAsGiven() throws GeneralSecurityException {
+    byte[] body = bytes("{}");
+    String padded = " " + SECRET + "\n";
+    Map<String, String> headers =
+        Map.of(
+            "X-Unicom360-Timestamp",
+            TIMESTAMP,
+            "X-Unicom360-Signature",
+            sign(TIMESTAMP, body, padded));
+    assertDoesNotThrow(
+        () -> Webhooks.verify(body, headers, padded, Webhooks.DEFAULT_TOLERANCE, NOW));
+    assertEquals(
+        Reason.SIGNATURE_MISMATCH,
+        assertThrows(
+                SignatureVerificationException.class,
+                () -> Webhooks.verify(body, headers, SECRET, Webhooks.DEFAULT_TOLERANCE, NOW))
+            .reason());
+  }
+
   @Test
   void aSignedBodyThatIsNotAnEventIsTheBaseException() {
     for (String text : List.of("not json", "[]", "{}", "{\"event\":1}", "")) {

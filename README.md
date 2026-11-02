@@ -266,7 +266,7 @@ All in `com.unicom360.errors`, all unchecked:
 
 ```
 Unicom360Exception
-+-- ConfigurationException          no API key, an unusable option
++-- ConfigurationException          no API key, an unusable option, a blank webhook secret
 +-- ApiConnectionException          no complete response (sent(), getCause())
 |   +-- ApiTimeoutException
 +-- ApiStatusException              any other non-2xx, or a 2xx that is not an envelope
@@ -400,6 +400,11 @@ if (event instanceof MessageStatusEvent status) {
 `Map<String, ?>` (values may be strings or lists; names are matched without regard to case; the
 first value is used) or a `HeaderLookup` such as `request::getHeader`. Overloads take a `Duration`
 tolerance and an `Instant` to verify at.
+
+A `null`, empty or whitespace-only secret (an unset environment variable, say) throws
+`ConfigurationException` before any other check, because anyone can forge a signature with an empty
+key. That is a fault in your configuration, not a failed verification: let it answer 500, and do not
+catch it where you answer 401.
 
 **Spring Boot.** Take the body as `byte[]`, because the signature covers the exact bytes received:
 

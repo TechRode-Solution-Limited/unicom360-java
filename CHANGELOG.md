@@ -26,7 +26,9 @@ First release, targeting the Unicom360 API contract v0.1.0.
   `SEND_FAILED` on retry-safe calls only), with UTC-minute waits after a 429 and full-jitter backoff
   otherwise; the `autoReferenceIds` option; per-call overrides with `RequestOptions`.
 - Webhook verification and parsing (`Webhooks.verify`, `constructEvent`) and the unsigned SMS and
-  email delivery reports (`parseSmsCallback`, `parseEmailCallback`).
+  email delivery reports (`parseSmsCallback`, `parseEmailCallback`). A `null`, empty or
+  whitespace-only secret throws `ConfigurationException` before any other check, because anyone can
+  forge a signature with an empty key.
 - Opt-in GSM-7 helpers (`Gsm`).
 - A pluggable `Transport` with a default on `java.net.http.HttpClient` that never follows redirects
   and bounds each attempt from sending to the end of the body.
